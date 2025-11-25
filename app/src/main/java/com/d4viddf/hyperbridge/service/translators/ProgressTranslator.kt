@@ -3,6 +3,7 @@ package com.d4viddf.hyperbridge.service.translators
 import android.app.Notification
 import android.content.Context
 import android.service.notification.StatusBarNotification
+import com.d4viddf.hyperbridge.R
 import com.d4viddf.hyperbridge.models.HyperIslandData
 import io.github.d4viddf.hyperisland_kit.HyperIslandNotification
 import io.github.d4viddf.hyperisland_kit.models.ImageTextInfoLeft
@@ -12,23 +13,25 @@ import io.github.d4viddf.hyperisland_kit.models.TextInfo
 
 class ProgressTranslator(context: Context) : BaseTranslator(context) {
 
-    private val FINISH_KEYWORDS = listOf("downloaded", "completed", "finished", "installed", "done")
+    // Lazy load keywords from XML resources
+    private val finishKeywords by lazy {
+        context.resources.getStringArray(R.array.progress_finish_keywords).toList()
+    }
 
     fun translate(sbn: StatusBarNotification, title: String, picKey: String): HyperIslandData {
         val builder = HyperIslandNotification.Builder(context, "bridge_${sbn.packageName}", title)
         val extras = sbn.notification.extras
+
         val max = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
         val current = extras.getInt(Notification.EXTRA_PROGRESS, 0)
         val indeterminate = extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
         val textContent = (extras.getString(Notification.EXTRA_TEXT) ?: "")
 
         val percent = if (max > 0) (current * 100) / max else 0
-        val isTextFinished = FINISH_KEYWORDS.any { textContent.contains(it, ignoreCase = true) }
-        val isFinished = percent >= 100 || isTextFinished
 
-        // 1. Define Display Strings
-        val displayTitle = title // e.g. "WhatsApp.apk"
-        val displayContent = if (isFinished) "Download Complete" else "$percent% • $textContent"
+        // Check localized keywords
+        val isTextFinished = finishKeywords.any { textContent.contains(it, ignoreCase = true) }
+        val isFinished = percent >= 100 || isTextFinished
 
         val tickKey = "${picKey}_tick"
         val hiddenKey = "hidden_pixel"
@@ -45,30 +48,34 @@ class ProgressTranslator(context: Context) : BaseTranslator(context) {
         val actions = extractBridgeActions(sbn)
         val actionKeys = actions.map { it.action.key }
 
-        // 2. Expanded View
+        // Localized Strings
+        val strDownloadComplete = context.getString(R.string.status_download_complete)
+        val strPending = context.getString(R.string.status_pending)
+        val strFinished = context.getString(R.string.status_finished)
+        val strDownloading = context.getString(R.string.status_downloading)
+
+        // Expanded Info
         builder.setChatInfo(
-            title = displayTitle,
-            content = displayContent, // e.g. "Download Complete" or "50% • 2MB/s"
+            title = title,
+            content = if (isFinished) strDownloadComplete else "${if(indeterminate) strPending else "$percent%"} • $textContent",
             pictureKey = picKey,
             actionKeys = actionKeys
         )
 
         if (!isFinished) builder.setProgressBar(percent, blueColor)
 
-        // 3. Big Island View
+        // Big Island
         if (isFinished) {
-            // FINISHED: [ Text ] --- [ Tick ]
             builder.setBigIslandInfo(
-                left = ImageTextInfoLeft(1, PicInfo(1, hiddenKey), TextInfo("", "")), // Empty Left
+                left = ImageTextInfoLeft(1, PicInfo(1, hiddenKey), TextInfo("", "")),
                 right = ImageTextInfoRight(
                     1,
-                    PicInfo(1, tickKey), // Tick Icon
-                    TextInfo(displayTitle, "Completed") // Title + "Completed"
+                    PicInfo(1, tickKey),
+                    TextInfo(strFinished, title)
                 )
             )
             builder.setSmallIslandIcon(tickKey)
         } else {
-            // DOWNLOADING: [ Icon ] --- [ Title / Content ]
             builder.setBigIslandInfo(
                 left = ImageTextInfoLeft(
                     1,
@@ -77,8 +84,8 @@ class ProgressTranslator(context: Context) : BaseTranslator(context) {
                 ),
                 right = ImageTextInfoRight(
                     1,
-                    PicInfo(1, hiddenKey), // Transparent
-                    TextInfo(displayTitle, displayContent) // Matches Base Info
+                    PicInfo(1, hiddenKey),
+                    TextInfo(strDownloading, "$percent%")
                 )
             )
 

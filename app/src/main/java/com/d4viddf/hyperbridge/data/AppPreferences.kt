@@ -3,6 +3,7 @@ package com.d4viddf.hyperbridge.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.d4viddf.hyperbridge.models.NotificationType
@@ -16,6 +17,7 @@ class AppPreferences(private val context: Context) {
     companion object {
         private val ALLOWED_PACKAGES_KEY = stringSetPreferencesKey("allowed_packages")
         private val SETUP_COMPLETE_KEY = booleanPreferencesKey("setup_complete")
+        private val LAST_VERSION_CODE_KEY = intPreferencesKey("last_version_code")
     }
 
     // --- GLOBAL SETTINGS ---
@@ -68,5 +70,14 @@ class AppPreferences(private val context: Context) {
             // See Service implementation for the actual usage.
         }
         return true // Placeholder, logic handled in Service via Flow
+    }
+
+    // Check saved version
+    val lastSeenVersion: Flow<Int> = context.dataStore.data
+        .map { it[LAST_VERSION_CODE_KEY] ?: 0 }
+
+    // Update version after showing dialog
+    suspend fun setLastSeenVersion(versionCode: Int) {
+        context.dataStore.edit { it[LAST_VERSION_CODE_KEY] = versionCode }
     }
 }
