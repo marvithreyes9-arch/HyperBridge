@@ -1,61 +1,72 @@
 package com.d4viddf.hyperbridge.data
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.d4viddf.hyperbridge.models.NotificationType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-// 1. Create the DataStore extension
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "hyper_bridge_settings")
+val Context.dataStore by preferencesDataStore(name = "settings")
 
 class AppPreferences(private val context: Context) {
 
     companion object {
-        // We store a Set of Strings (Package Names)
         private val ALLOWED_PACKAGES_KEY = stringSetPreferencesKey("allowed_packages")
         private val SETUP_COMPLETE_KEY = booleanPreferencesKey("setup_complete")
     }
 
-    // --- READ (For the UI) ---
-    // Returns a Flow that emits the list whenever it changes
+    // --- GLOBAL SETTINGS ---
     val allowedPackagesFlow: Flow<Set<String>> = context.dataStore.data
-        .map { preferences ->
-            preferences[ALLOWED_PACKAGES_KEY] ?: emptySet()
-        }
+        .map { it[ALLOWED_PACKAGES_KEY] ?: emptySet() }
 
-    // NEW: Read Setup State
     val isSetupComplete: Flow<Boolean> = context.dataStore.data
-        .map { preferences ->
-            preferences[SETUP_COMPLETE_KEY] ?: false
-        }
+        .map { it[SETUP_COMPLETE_KEY] ?: false }
 
-    // NEW: Write Setup State
     suspend fun setSetupComplete(isComplete: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[SETUP_COMPLETE_KEY] = isComplete
-        }
+        context.dataStore.edit { it[SETUP_COMPLETE_KEY] = isComplete }
     }
 
-    // --- WRITE (For the UI) ---
     suspend fun toggleApp(packageName: String, isEnabled: Boolean) {
         context.dataStore.edit { preferences ->
             val currentSet = preferences[ALLOWED_PACKAGES_KEY] ?: emptySet()
-            if (isEnabled) {
-                preferences[ALLOWED_PACKAGES_KEY] = currentSet + packageName
+            preferences[ALLOWED_PACKAGES_KEY] = if (isEnabled) {
+                currentSet + packageName
             } else {
-                preferences[ALLOWED_PACKAGES_KEY] = currentSet - packageName
+                currentSet - packageName
             }
         }
     }
 
+    // --- PER-APP CONFIGURATION ---
 
-    // --- SYNC READ (For the Service) ---
-    // The service needs to check this strictly at the moment a notification arrives.
-    // Since DataStore is async, we can use a helper or collect the flow in the service scope.
-    // Ideally, the Service observes the Flow and keeps a local cache.
+    // Returns the set of enabled types (e.g. "MEDIA", "CALL"). Defaults to ALL if not set.
+    fun getAppConfig(packageName: String): Flow<Set<String>> {
+        val key = stringSetPreferencesKey("config_$packageName")
+        return context.dataStore.data.map { preferences ->
+            preferences[key] ?: NotificationType.entries.map { it.name }.toSet()
+        }
+    }
+
+    suspend fun updateAppConfig(packageName: String, type: NotificationType, isEnabled: Boolean) {
+        val key = stringSetPreferencesKey("config_$packageName")
+        context.dataStore.edit { preferences ->
+            val current = preferences[key] ?: NotificationType.entries.map { it.name }.toSet()
+            preferences[key] = if (isEnabled) current + type.name else current - type.name
+        }
+    }
+
+    // Helper for the Service to get config one-shot
+    suspend fun isTypeAllowed(packageName: String, type: NotificationType): Boolean {
+        val key = stringSetPreferencesKey("config_$packageName")
+        var allowed = true
+        context.dataStore.edit { preferences ->
+            // We use edit block here just to access the snapshot safely, or use data.first()
+            // But for performance in service, mapping flow is better.
+            // See Service implementation for the actual usage.
+        }
+        return true // Placeholder, logic handled in Service via Flow
+    }
 }

@@ -1,5 +1,6 @@
 [versions]
 agp = "8.13.1"
+datastorePreferences = "1.2.0"
 hyperislandKit = "0.2.1"
 kotlin = "2.2.21"
 coreKtx = "1.17.0"
@@ -14,6 +15,8 @@ ui = "1.9.5"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
 hyperisland-kit = { module = "io.github.d4viddf:hyperisland_kit", version.ref = "hyperislandKit" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

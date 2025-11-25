@@ -6,6 +6,7 @@ import android.service.notification.StatusBarNotification
 import com.d4viddf.hyperbridge.models.HyperIslandData
 import io.github.d4viddf.hyperisland_kit.HyperIslandNotification
 import io.github.d4viddf.hyperisland_kit.models.ImageTextInfoLeft
+import io.github.d4viddf.hyperisland_kit.models.ImageTextInfoRight
 import io.github.d4viddf.hyperisland_kit.models.PicInfo
 import io.github.d4viddf.hyperisland_kit.models.TextInfo
 
@@ -13,58 +14,73 @@ class StandardTranslator(context: Context) : BaseTranslator(context) {
 
     fun translate(sbn: StatusBarNotification, picKey: String): HyperIslandData {
         val extras = sbn.notification.extras
-        val title = extras.getString(Notification.EXTRA_TITLE) ?: sbn.packageName
-        val text = extras.getString(Notification.EXTRA_TEXT) ?: ""
+
+        // 1. Extract Raw Data
+        val rawTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: sbn.packageName
+        val rawText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: "" // <--- Status Chip Info
         val template = extras.getString(Notification.EXTRA_TEMPLATE) ?: ""
 
-        // Detect Media (Spotify, YouTube, Apple Music)
         val isMedia = template.contains("MediaStyle")
+        val isCall = sbn.notification.category == Notification.CATEGORY_CALL
 
-        val builder = HyperIslandNotification.Builder(context, "bridge_${sbn.packageName}", title)
+        // 2. Format Display Text
+        val displayTitle = rawTitle
 
-        // 1. Extract Resources
-        val bridgeActions = extractBridgeActions(sbn)
-        val actionKeys = bridgeActions.map { it.action.key }
+        // Combine Text and SubText (Status Chip)
+        // Example: "Incoming Call • +1 555-0199" OR "Arriving in 5 min • Uber X"
+        val displayContent = when {
+            isMedia -> "Now Playing"
+            isCall && subText.isNotEmpty() -> "$rawText • $subText"
+            subText.isNotEmpty() -> if (rawText.isNotEmpty()) "$rawText • $subText" else subText
+            else -> rawText
+        }
 
-        // 2. Register Main Picture
-        // This must happen before building the JSON
+        val builder = HyperIslandNotification.Builder(context, "bridge_${sbn.packageName}", displayTitle)
+
+        // 3. Resources
+        val hiddenKey = "hidden_pixel"
         builder.addPicture(resolveIcon(sbn, picKey))
+        builder.addPicture(getTransparentPicture(hiddenKey))
 
-        // 3. Configure Expanded Notification (Shade)
+        val actions = extractBridgeActions(sbn)
+        val actionKeys = actions.map { it.action.key }
+
+        // 4. Expanded View (Shade)
         builder.setBaseInfo(
-            title = title,
-            content = if (isMedia) "Now Playing" else text,
-            pictureKey = picKey, // This makes the icon visible in the shade
+            title = displayTitle,
+            content = displayContent,
+            pictureKey = picKey,
             actionKeys = actionKeys
         )
 
-        // 4. Configure Big Island (Popup)
+        // 5. Big Island (Popup)
         if (isMedia) {
-            // MEDIA MODE: Show ONLY the Icon (Album Art)
-            // We pass empty text to hide the text labels, making the icon dominant
+            // Media: Art Left
             builder.setBigIslandInfo(
-                left = ImageTextInfoLeft(
-                    1,
-                    PicInfo(1, picKey),
-                    TextInfo(title = "", content = "") // Hide text
-                )
+                left = ImageTextInfoLeft(1, PicInfo(1, picKey), TextInfo("", ""))
             )
         } else {
-            // STANDARD MODE: Icon Left | Text Right
+            // Standard/Live Update: [ Icon ] --- [ Title / Content ]
             builder.setBigIslandInfo(
+                // Left: App Icon
                 left = ImageTextInfoLeft(
                     1,
                     PicInfo(1, picKey),
-                    TextInfo(title = title, content = text)
+                    TextInfo("", "")
+                ),
+                // Right: Title + Content (with SubText included)
+                right = ImageTextInfoRight(
+                    1,
+                    PicInfo(1, hiddenKey), // Transparent Spacer
+                    TextInfo(displayTitle, displayContent)
                 )
             )
         }
 
-        // 5. Small Island (Pill)
         builder.setSmallIslandIcon(picKey)
 
-        // 6. Add Actions & Action Icons
-        bridgeActions.forEach {
+        actions.forEach {
             builder.addAction(it.action)
             it.actionImage?.let { iconPic -> builder.addPicture(iconPic) }
         }
