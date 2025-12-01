@@ -1,3 +1,4 @@
+// ... imports remain the same ...
 package com.d4viddf.hyperbridge.ui.screens.onboarding
 
 import android.Manifest
@@ -28,7 +29,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,6 +41,7 @@ import com.d4viddf.hyperbridge.R
 import com.d4viddf.hyperbridge.util.*
 import kotlinx.coroutines.launch
 
+// ... (OnboardingScreen, WelcomePage, OnboardingPageLayout, ExplanationPage remain the same) ...
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(onFinish: () -> Unit) {
@@ -52,16 +53,21 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
     }
 
+    // Permissions
     var isListenerGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var isPostGranted by remember { mutableStateOf(isPostNotificationsEnabled(context)) }
-    val isCompatible = remember(context) { DeviceCompatibility.isXiaomiDevice(context) }
+
+    // Compatibility
+    val isXiaomi = remember { DeviceUtils.isXiaomi }
+    val isCompatibleOS = remember { DeviceUtils.isCompatibleOS() }
+    val canProceedCompat = isXiaomi && isCompatibleOS
 
     val postPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { isGranted -> isPostGranted = isGranted }
     )
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -92,7 +98,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                     }
 
                     val canProceed = when (pagerState.currentPage) {
-                        2 -> isCompatible
+                        2 -> canProceedCompat
                         3 -> isPostGranted
                         4 -> isListenerGranted
                         else -> true
@@ -121,7 +127,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
             when (page) {
                 0 -> WelcomePage(onStartClick = { scope.launch { pagerState.animateScrollToPage(1) } })
                 1 -> ExplanationPage()
-                2 -> CompatibilityPage(isCompatible)
+                2 -> CompatibilityPage() // Updated
                 3 -> PostPermissionPage(isGranted = isPostGranted, onRequest = { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) postPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) })
                 4 -> ListenerPermissionPage(context, isListenerGranted)
                 5 -> OptimizationPage(context)
@@ -190,21 +196,80 @@ fun ExplanationPage() {
     }
 }
 
+// --- UPDATED COMPATIBILITY PAGE ---
 @Composable
-fun CompatibilityPage(isCompatible: Boolean) {
-    val icon = if (isCompatible) Icons.Default.CheckCircle else Icons.Default.Cancel
-    val color = if (isCompatible) Color(0xFF34C759) else MaterialTheme.colorScheme.error
-    val title = stringResource(if (isCompatible) R.string.device_compatible else R.string.unsupported_device)
-    val desc = stringResource(if (isCompatible) R.string.compatible_msg else R.string.incompatible_msg)
+fun CompatibilityPage() {
+    val isXiaomi = DeviceUtils.isXiaomi
+    val isCompatibleOS = DeviceUtils.isCompatibleOS()
+    val isCN = DeviceUtils.isCNRom
+    val osVersion = DeviceUtils.getHyperOSVersion()
+    val deviceName = DeviceUtils.getDeviceMarketName() // e.g. "Xiaomi 14"
 
-    OnboardingPageLayout(title = title, description = desc, icon = icon, iconColor = color) {
-        if (isCompatible) {
-            Text(stringResource(R.string.system_detected), color = color, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        } else {
-            Text(stringResource(R.string.app_wont_work), color = color, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    val (icon, color, titleRes, descRes) = when {
+        !isXiaomi -> Quad(Icons.Default.Cancel, MaterialTheme.colorScheme.error, R.string.unsupported_device, R.string.req_xiaomi)
+        !isCompatibleOS -> Quad(Icons.Default.Cancel, MaterialTheme.colorScheme.error, R.string.unsupported_device, R.string.req_hyperos)
+        else -> Quad(Icons.Default.CheckCircle, Color(0xFF34C759), R.string.device_compatible, R.string.compatible_msg)
+    }
+
+    OnboardingPageLayout(
+        title = stringResource(titleRes),
+        description = stringResource(descRes),
+        icon = icon,
+        iconColor = color
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            // Information Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Device Row
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Smartphone, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(text = android.os.Build.MANUFACTURER.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text(text = deviceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
+                    Spacer(Modifier.height(12.dp))
+
+                    // OS Row
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(text = stringResource(R.string.system_version), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text(text = osVersion, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            // CN Warning
+            if (isCN && isXiaomi) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.warning_cn_rom_title), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }
+
+// Helper
+data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+// ... (PostPermissionPage, ListenerPermissionPage, OptimizationPage remain the same) ...
 
 @Composable
 fun PostPermissionPage(isGranted: Boolean, onRequest: () -> Unit) {

@@ -1,5 +1,6 @@
 package com.d4viddf.hyperbridge.ui.screens.settings
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -29,8 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.d4viddf.hyperbridge.R
+import com.d4viddf.hyperbridge.util.DeviceUtils
 import com.d4viddf.hyperbridge.util.isNotificationServiceEnabled
 import com.d4viddf.hyperbridge.util.isPostNotificationsEnabled
 import com.d4viddf.hyperbridge.util.openAutoStartSettings
@@ -42,11 +43,16 @@ fun SetupHealthScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
+    // --- STATE ---
     var isListenerGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var isPostGranted by remember { mutableStateOf(isPostNotificationsEnabled(context)) }
     var isBatteryOptimized by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    // Autostart is tricky (System doesn't report it), so we rely on user interaction or assume 'false' initially.
+    // Since we can't check it, we just show the button.
+
+    // --- LIFECYCLE ---
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -58,6 +64,12 @@ fun SetupHealthScreen(onBack: () -> Unit) {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    // --- DEVICE CHECKS ---
+    val isXiaomi = DeviceUtils.isXiaomi
+    val isCompatibleOS = DeviceUtils.isCompatibleOS()
+    val osVersionString = DeviceUtils.getHyperOSVersion()
+    val isCN = DeviceUtils.isCNRom
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -84,6 +96,8 @@ fun SetupHealthScreen(onBack: () -> Unit) {
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
+
+            // --- INFO HEADER ---
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 shape = RoundedCornerShape(16.dp),
@@ -93,7 +107,7 @@ fun SetupHealthScreen(onBack: () -> Unit) {
                     Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        stringResource(R.string.app_health_desc),
+                        text = stringResource(R.string.app_health_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
@@ -102,9 +116,40 @@ fun SetupHealthScreen(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // --- 1. DEVICE COMPATIBILITY (NEW SECTION) ---
+            HealthSectionTitle(stringResource(R.string.setup_health_title)) // "System Compatibility"
+
+            HealthGroupCard {
+                // Device Model
+                HealthItem(
+                    title = android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() },
+                    subtitle = if (isXiaomi) stringResource(R.string.status_ok) else stringResource(R.string.req_xiaomi),
+                    icon = Icons.Default.Smartphone,
+                    isGranted = isXiaomi,
+                    forceAction = false, // Just info
+                    onClick = {} // No action
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f))
+
+                // OS Version
+                HealthItem(
+                    title = osVersionString,
+                    subtitle = if (isCompatibleOS) stringResource(R.string.status_ok) else stringResource(R.string.req_hyperos),
+                    icon = if (isCompatibleOS) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    isGranted = isCompatibleOS,
+                    forceAction = false,
+                    onClick = {}
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- 2. PERMISSIONS ---
             HealthSectionTitle(stringResource(R.string.req_permissions))
 
             HealthGroupCard {
+                // Notification Listener
                 HealthItem(
                     title = stringResource(R.string.notif_access),
                     subtitle = stringResource(R.string.notif_access_desc),
@@ -112,7 +157,10 @@ fun SetupHealthScreen(onBack: () -> Unit) {
                     isGranted = isListenerGranted,
                     onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                 )
+
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f))
+
+                // Post Notification (Android 13+)
                 HealthItem(
                     title = stringResource(R.string.show_island),
                     subtitle = stringResource(R.string.perm_display_desc),
@@ -130,18 +178,23 @@ fun SetupHealthScreen(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // --- 3. OPTIMIZATION ---
             HealthSectionTitle(stringResource(R.string.device_optimization))
 
             HealthGroupCard {
+                // Autostart (Can't detect, so force action button)
                 HealthItem(
-                    title = stringResource(R.string.xiaomi_autostart),
+                    title = stringResource(R.string.xiaomi_autostart), // "Autostart"
                     subtitle = stringResource(R.string.autostart_desc),
                     icon = Icons.Default.RestartAlt,
-                    isGranted = false,
-                    forceAction = true,
+                    isGranted = false, // Always show button
+                    forceAction = true, // Shows Arrow instead of X
                     onClick = { openAutoStartSettings(context) }
                 )
+
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f))
+
+                // Battery
                 HealthItem(
                     title = stringResource(R.string.battery_unrestricted),
                     subtitle = stringResource(R.string.battery_desc),
@@ -151,13 +204,43 @@ fun SetupHealthScreen(onBack: () -> Unit) {
                 )
             }
 
+            // --- 4. WARNINGS ---
+            if (isCN && isXiaomi) {
+                Spacer(Modifier.height(32.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.warning_cn_rom_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.warning_cn_rom_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
+
             Text(
                 stringResource(R.string.recents_note),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.Gray,
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
+
             Spacer(modifier = Modifier.height(40.dp))
         }
     }
@@ -195,15 +278,20 @@ fun HealthItem(
     forceAction: Boolean = false,
     onClick: () -> Unit
 ) {
+    // If granted: Green Check (Non-clickable usually, unless we want to allow changing it back)
+    // If not granted: Actionable Row with Warning Icon or Arrow
+
     val statusColor = if (isGranted) Color(0xFF34C759) else MaterialTheme.colorScheme.error
     val isActionable = !isGranted || forceAction
+
+    // Only highlight background if it NEEDS action
     val rowColor = if (isGranted && !forceAction) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(rowColor)
-            .clickable { if (isActionable) onClick() }
+            .clickable(enabled = isActionable) { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -213,7 +301,9 @@ fun HealthItem(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(24.dp)
         )
+
         Spacer(modifier = Modifier.width(16.dp))
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -221,12 +311,20 @@ fun HealthItem(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            // If granted, say "Active" instead of the long description to keep it clean?
+            // Or keep description? Keeping description is informative.
+            // Let's conditionally change text if it's granted to be cleaner.
+            val displaySubtitle = if (isGranted && !forceAction) stringResource(R.string.status_active) else subtitle
+            val displayColor = if (isActionable) MaterialTheme.colorScheme.onSurfaceVariant else statusColor
+
             Text(
-                text = if (isGranted && !forceAction) stringResource(R.string.status_active) else subtitle,
+                text = displaySubtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (isActionable) MaterialTheme.colorScheme.onSurfaceVariant else statusColor
+                color = displayColor
             )
         }
+
         if (isGranted && !forceAction) {
             Icon(Icons.Default.CheckCircle, stringResource(R.string.perm_granted), tint = statusColor, modifier = Modifier.size(24.dp))
         } else {
