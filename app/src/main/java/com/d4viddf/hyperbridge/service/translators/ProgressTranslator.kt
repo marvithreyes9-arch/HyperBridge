@@ -93,9 +93,10 @@ class ProgressTranslator(context: Context) : BaseTranslator(context) {
                     picKey,
                     "", // Title inside circle (Empty)
                     percent,
-                    blueColor
+                    blueColor,
+                    true,
                 )
-                builder.setSmallIslandCircularProgress(picKey, percent, blueColor)
+                builder.setSmallIslandCircularProgress(picKey, percent, blueColor, true)
             } else {
                 builder.setSmallIslandIcon(picKey)
             }
