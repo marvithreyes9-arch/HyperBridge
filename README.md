@@ -108,4 +108,4 @@ Distributed under the Apache 2.0 License. See `LICENSE` for more information.
 
 **D4vidDf**
 * Website: [d4viddf.com](https://d4viddf.com)
-* GitHub: [@D4vidDf](https://github.com/D4vidDf)
+* GitHub: [@D4vidDf](https://github.com/D4vidDf
